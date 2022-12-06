@@ -11,12 +11,20 @@ let startTime
 /**
  * @name: linkPerfectSite 连接最优站点函数
  * @desc: 取分数score最高的站点连接
- * @param: allRdsSite: 所有站点数组   scoreArr：分数数组
+ * @param: allRdsSite: 所有站点数组   
  */
-async function linkPerfectSite(allRdsSite, scoreArr) {
+export async function linkPerfectSite(allRdsSite) {
+  const scoreArr = [];      // scoreArr：分数数组
+  const availableRdsSite = [];   // 保存可用的所有站点
+
   for (const item of allRdsSite) {
     closeRdsSocket();
-    await createResWebSocket(item.domain);
+    try {
+      await createResWebSocket(item.domain);
+    } catch (error) {
+      // 本次站点连不上，直接跳出本次循环
+      continue;
+    }
 
     const sitespeedVerify = getVerify();
     /* 测速参数： */
@@ -40,167 +48,18 @@ async function linkPerfectSite(allRdsSite, scoreArr) {
     const { stext } = await rdsRequest(params);
 
     // 保存测速的分数
-    scoreArr.push(stext.data.score)
+    scoreArr.push(stext.data.score);
+    // 保存可用的站点
+    availableRdsSite.push(item);
   }
-
+  
   // 获取分数最高的index
   const maxIndex = scoreArr.indexOf(Math.max.apply(Math, scoreArr))
-
+  
   // 连接分数最高的站点
-  const currentRdsSite = allRdsSite[maxIndex].domain;
+  const currentRdsSite = availableRdsSite[maxIndex].domain;
   closeRdsSocket();
   await createResWebSocket(currentRdsSite);
-  return currentRdsSite;
-}
-
-/**
- * @name: optimalSite
- * @desc: 客户登录 或 匿名登录 
- * @param: loginReal: true 客户登录 false 匿名登录   hkRealFlag: 港股实时和延时标志   usRealFlag: 美股实时和延时标志
- */
-async function optimalSite(loginReal, hkRealFlag, usRealFlag) {  // real: 实时站点标志
-  if (rdsSocket) { // 先断开已经连接的站点
-    rdsSocket.close();
-    rdsSocket = null;
-  }
-
-  // 获取所有的站点
-  // const res = await http('jyb', '/jybapp/other/servers')  // 初始化查询所有服务和站点
-  // console.log(res);
-  const { data } = {
-    "result": 1,
-    "msg": "查询成功",
-    "data": {
-      "cloudapi": "https://cloudapi.iqdii.com",
-      "jybdata": "http://jybdata.iqdii.com",
-      "rdsreal": [
-        {
-          "name": "rdsws",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal/rds_ws"
-        },
-        {
-          "name": "rdswscn",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal/rds_ws"
-        },
-        {
-          "name": "rdswshk",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal/rds_ws"
-        }
-      ],
-      "rdsdelay": [
-        {
-          "name": "rdsws",
-          "domain": "wss://rdswsuat.iqdii.com/BQdelay/rds_ws"
-        },
-        {
-          "name": "rdswscn",
-          "domain": "wss://rdswsuat.iqdii.com/BQdelay/rds_ws"
-        },
-        {
-          "name": "rdswshk",
-          "domain": "wss://rdswsuat.iqdii.com/BQdelay/rds_ws"
-        }
-      ],
-      "rdsfulltick": [
-        {
-          "name": "rdsws",
-          "domain": "wss://rdswsuat.iqdii.com/BQfulltick/rds_ws"
-        },
-        {
-          "name": "rdswscn",
-          "domain": "wss://rdswsuat.iqdii.com/BQfulltick/rds_ws"
-        },
-        {
-          "name": "rdswshk",
-          "domain": "wss://rdswsuat.iqdii.com/BQfulltick/rds_ws"
-        }
-      ],
-      "rdsreal_usdelay": [
-        {
-          "name": "rdsws",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal_usdelay/rds_ws"
-        },
-        {
-          "name": "rdswscn",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal_usdelay/rds_ws"
-        },
-        {
-          "name": "rdswshk",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal_usdelay/rds_ws"
-        }
-      ],
-      "rdsdelay_usdelay": [
-        {
-          "name": "rdsws",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal/rds_ws"
-        },
-        {
-          "name": "rdswscn",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal/rds_ws"
-        },
-        {
-          "name": "rdswshk",
-          "domain": "wss://rdswsuat.iqdii.com/BQreal/rds_ws"
-        }
-        // {
-        //   "name": "rdsws",
-        //   "domain": "wss://rdswsuat.iqdii.com/BQdelay_usdelay/rds_ws"
-        // },
-        // {
-        //   "name": "rdswscn",
-        //   "domain": "wss://rdswsuat.iqdii.com/BQdelay_usdelay/rds_ws"
-        // },
-        // {
-        //   "name": "rdswshk",
-        //   "domain": "wss://rdswsuat.iqdii.com/BQdelay_usdelay/rds_ws"
-        // }
-      ]
-    }
-  }
-
-  let currentRdsSite
-
-  if (loginReal) {  // 客户登录
-    let allRdsSite   // 保存所有过滤出来的站点
-    let scoreArr = []
-
-    if (hkRealFlag) {
-      switch (usRealFlag) {
-        case true:    // 港股和美股实时
-          allRdsSite = data.rdsreal;
-          // 连接最优站点
-          currentRdsSite = await linkPerfectSite(allRdsSite, scoreArr)
-          break
-        case false:   // 港股实时和美股延时
-          allRdsSite = data.rdsreal_usdelay;
-          // 连接最优站点
-          currentRdsSite = await linkPerfectSite(allRdsSite, scoreArr)
-          break
-      }
-    } else {
-      switch (usRealFlag) {
-        case true:    // 港股延时和美股实时
-          allRdsSite = data.rdsdelay;
-          // 连接最优站点
-          currentRdsSite = await linkPerfectSite(allRdsSite, scoreArr)
-          break
-        case false:   // 港股和美股延时
-          allRdsSite = data.rdsdelay_usdelay;
-          // 连接最优站点
-          currentRdsSite = await linkPerfectSite(allRdsSite, scoreArr)
-          break
-      }
-    }
-  } else {  // 匿名登录
-    // 延时 站点处理
-
-    const allRdsSite = data.rdsdelay_usdelay;  // 保存港股延时和美股延时的所有的站点
-    const scoreArr = [];  // 保存所有站点的测速分数
-
-    // 连接最优站点
-    currentRdsSite = await linkPerfectSite(allRdsSite, scoreArr)
-  }
-
   return currentRdsSite;
 }
 
@@ -311,6 +170,5 @@ function GetRdsSocket() {
 export {
   rdsRequest,
   closeRdsSocket,
-  GetRdsSocket,
-  optimalSite
+  GetRdsSocket
 }

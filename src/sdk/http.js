@@ -1,12 +1,11 @@
 import axios from 'axios'
-function http(channel, url, body) {
-  switch (channel) {
-    case 'cloudapi':
-      axios.defaults.baseURL = import.meta.env.DEV ? '/northSouthTrack' : 'https://cloudApiuat.iqdii.com/'
-      break
-    case 'jybdata':
-      axios.defaults.baseURL = import.meta.env.DEV ? '/api' : 'https://gtj-data.iqdii.com' 
-      break
+function http(domainPrefix, url, body) {
+  // 加上域名前缀
+  if (domainPrefix.pro) {
+    axios.defaults.baseURL = import.meta.env.DEV ? domainPrefix.dev : domainPrefix.pro
+  } else {
+    // /jybapp/other/servers 执行的逻辑
+    axios.defaults.baseURL = import.meta.env.DEV ? '/api' : 'https://gtjuat-data.iqdii.com/'
   }
 
   return new Promise((resolve, reject) => {
