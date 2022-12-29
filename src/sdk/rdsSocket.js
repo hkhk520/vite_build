@@ -8,6 +8,11 @@ let rdsSocket = null
 // 连接站点 的 open 时间
 let startTime
 
+// 心跳存活的最后时间
+let lastAliveTime = null
+
+let webSocketMessageCallback = function (message) { }
+
 /**
  * @name: linkPerfectSite 连接最优站点函数
  * @desc: 取分数score最高的站点连接
@@ -52,12 +57,14 @@ export async function linkPerfectSite(allRdsSite) {
     // 保存可用的站点
     availableRdsSite.push(item);
   }
-  
+
   // 获取分数最高的index
   const maxIndex = scoreArr.indexOf(Math.max.apply(Math, scoreArr))
-  
+
+  if (availableRdsSite.length == 0) return
+
   // 连接分数最高的站点
-  const currentRdsSite = availableRdsSite[maxIndex].domain;
+  const currentRdsSite = availableRdsSite[maxIndex]?.domain;
   closeRdsSocket();
   await createResWebSocket(currentRdsSite);
   return currentRdsSite;
@@ -83,6 +90,43 @@ export function createResWebSocket(socketUrl) {
       console.log('WebSocket连接发生错误')
       reject(event)
     })
+    rdsSocket.addEventListener('message', function rdsDeal(event) {
+      // 2s更新一次心跳存活的最后时间
+      lastAliveTime = new Date().getTime();
+
+      // webcoket 响应回来的是二进制的处理逻辑
+      if (event.data instanceof Blob) {
+        const file = new FileReader();
+        file.onload = function (res) { // 这里的this是file
+          const dataView = new DataView(this.result);
+          // const length = dataView.getInt32(0, true);
+          const type = dataView.getInt16(4, true);
+          const id = dataView.getInt16(6, true);
+          console.log(type, id);
+
+          // type == 32000 webcoket 服务控制ID
+          if (type == 32000) {
+            if (id == 1) {
+              const str = String.fromCharCode.apply(null, new Uint8Array(this.result, 8));
+
+              // 需要关闭连接，并且不自动重连
+              closeRdsSocket();
+
+              webSocketMessageCallback(str);
+            } else if (id == 1000) {
+              // 服务包变化，重新查询最新服务包，重连
+              setLastAliveTime()
+            }
+          }
+        }
+
+        // 用于启动读取指定的 Blob 或 File 内容
+        file.readAsArrayBuffer(event.data)
+      } else {
+        // webcoket 响应回来的是字符串的处理逻辑
+        webSocketMessageCallback(event.data)
+      }
+    })
   })
 }
 
@@ -92,29 +136,36 @@ async function rdsRequest(json) {
   const stext = json.url;
   const stype = json.stype;
   const verify = json.verify;
-  const session = json.session;  // 登录 uil 获取的 session
+  const session = json.session;  // 登录 jyb 获取的 session
+  const servicepkg = json.servicepkg;
 
+  /* 取到对应的协议 start */
   let pkgtype = '';
   const stextParse = qs.parse(stext);
   for (const key in stextParse) {
-    if (key.indexOf('pkgtype') != -1) pkgtype = stextParse[key]  // 取到对应的协议
+    if (key.includes('pkgtype')) {
+      pkgtype = stextParse[key]
+      break;
+    }
   }
+  /* 取到对应的协议 end */
 
   const { hashCode } = encryption(pkgtype, verify);
   const security = hashCode;  // 生成加密的 security
 
-  const res = await subscribeRdsSend(stext, stype, session, verify, security)
+  const res = await subscribeRdsSend(stext, stype, session, verify, security, servicepkg)
 
   return res
 }
-async function subscribeRdsSend(stext, stype, session, verify, security) {
+async function subscribeRdsSend(stext, stype, session, verify, security, servicepkg) {
   // 添加到队列 后续再说
   const pkgobj = {
     stype,
     session, // 登录 uil 获取到的session
     verify,
     stext,
-    security
+    security,
+    servicepkg
   }
 
   switch (rdsSocket.readyState) {
@@ -141,9 +192,10 @@ async function subscribeRdsSend(stext, stype, session, verify, security) {
   return new Promise((resolve, reject) => {
     rdsSocket.addEventListener('message', function rdsDeal(event) {
       const data = JSON.parse(event.data)
-      data.rdsSocket = rdsSocket
-      resolve(data)
-      rdsSocket.removeEventListener('message', rdsDeal)
+      if (verify === data.verify) {
+        resolve(data)
+        rdsSocket.removeEventListener('message', rdsDeal)
+      }
     })
   })
 }
@@ -162,13 +214,25 @@ function closeRdsSocket() {
 // 获取 rdsSocket
 function GetRdsSocket() {
   if (!rdsSocket) {
-    return { result: 0, msg: '请先登录' }
+    return false
   }
   return rdsSocket
+}
+
+// WebSocketMessage注册回调函数
+export function SetWebSocketMessageCallback(callback) {
+  webSocketMessageCallback = callback
+}
+
+function setLastAliveTime() {
+  // 心跳存活时间置空
+  lastAliveTime = null
 }
 
 export {
   rdsRequest,
   closeRdsSocket,
-  GetRdsSocket
+  GetRdsSocket,
+  lastAliveTime,
+  setLastAliveTime
 }

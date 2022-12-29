@@ -1,11 +1,12 @@
 import axios from 'axios'
+import { isPro } from './sdk'
 function http(domainPrefix, url, body) {
   // 加上域名前缀
   if (domainPrefix.pro) {
     axios.defaults.baseURL = import.meta.env.DEV ? domainPrefix.dev : domainPrefix.pro
   } else {
     // /jybapp/other/servers 执行的逻辑
-    axios.defaults.baseURL = import.meta.env.DEV ? '/api' : 'https://gtjuat-data.iqdii.com/'
+    axios.defaults.baseURL = import.meta.env.DEV ? '/api' : (isPro ? 'https://gtadata.iqdii.com/' : 'https://gtadata-uat.iqdii.com/')
   }
 
   return new Promise((resolve, reject) => {
@@ -26,7 +27,7 @@ function http(domainPrefix, url, body) {
           })
         } else {
           resolve({
-            result: res.data.result, 
+            result: res.data.result,
             msg: res.data.msg ? res.data.msg : ''
           });
         }
